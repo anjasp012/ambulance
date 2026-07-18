@@ -163,15 +163,15 @@ new #[Layout('layouts.guest')] class extends Component
         transform: scale(0.92);
     }
     .floatnav-icon {
-        width: 18px;
-        height: 18px;
+        width: 22px;
+        height: 22px;
         display: flex;
         align-items: center;
         justify-content: center;
         margin-bottom: 1px;
     }
     .floatnav-label {
-        font-size: 8px;
+        font-size: 10px;
         font-weight: 700;
         line-height: 1.1;
     }
