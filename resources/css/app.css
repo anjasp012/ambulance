@@ -1,0 +1,71 @@
+@import 'tailwindcss';
+
+@source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
+@source '../../storage/framework/views/*.php';
+
+@theme {
+    --font-sans: 'Poppins', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji',
+        'Segoe UI Symbol', 'Noto Color Emoji';
+}
+
+/* ============================================================
+   BRAND PALETTE — Jersey Purple-Magenta
+   ============================================================ */
+:root {
+    --brand-1:  #3154B8;   /* Biru */
+    --brand-2:  #4A4FB2;   /* Biru-Ungu */
+    --brand-3:  #6B3F98;   /* Ungu */
+    --brand-4:  #83316B;   /* Magenta-Ungu (dominan) */
+    --brand-5:  #A23878;   /* Pink-Ungu */
+    --brand-6:  #C0457F;   /* Pink */
+    --brand-dark: #2C1B39; /* Bayangan/Gelap */
+    --brand-accent: #AE99B0; /* Highlight/Muted */
+}
+
+/* Gradient utama */
+.bg-brand-gradient {
+    background: linear-gradient(135deg, #3154B8 0%, #4A4FB2 20%, #6B3F98 40%, #83316B 70%, #C0457F 100%);
+}
+
+/* Gradient lebih cerah */
+.bg-brand-gradient-vivid {
+    background: linear-gradient(135deg, #3154B8 0%, #5A43B4 40%, #8A3686 75%, #C0457F 100%);
+}
+
+/* Solid brand colors */
+.bg-brand        { background-color: #83316B; }
+.bg-brand-deep   { background-color: #6B3F98; }
+.bg-brand-blue   { background-color: #3154B8; }
+.bg-brand-dark   { background-color: #2C1B39; }
+.bg-brand-light  { background-color: rgba(174,153,176,0.15); }
+.bg-brand-muted  { background-color: rgba(131,49,107,0.08); }
+
+.text-brand      { color: #83316B; }
+.text-brand-deep { color: #6B3F98; }
+.text-brand-blue { color: #3154B8; }
+.text-brand-light{ color: #AE99B0; }
+
+.border-brand    { border-color: rgba(131,49,107,0.2); }
+.border-brand-deep { border-color: rgba(107,63,152,0.2); }
+
+.ring-brand      { --tw-ring-color: #83316B; }
+
+.shadow-brand    { box-shadow: 0 8px 24px rgba(131,49,107,0.25); }
+.shadow-brand-sm { box-shadow: 0 4px 12px rgba(131,49,107,0.18); }
+
+/* ---- Utility: Hide scrollbar but keep functionality ---- */
+.scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+    display: none;
+}
+
+/* ---- Line clamp utility ---- */
+.line-clamp-2 {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
