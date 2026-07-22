@@ -72,3 +72,200 @@
     -webkit-box-orient: vertical;
     overflow: hidden;
 }
+
+/* ============================================================
+   SHARED VISUAL UTILITIES (from home page styles)
+   ============================================================ */
+
+/* Gradient classes */
+.grad-main    { background: linear-gradient(135deg, #3154B8 0%, #4A4FB2 20%, #6B3F98 40%, #83316B 70%, #C0457F 100%); }
+.grad-vivid   { background: linear-gradient(135deg, #3154B8 0%, #5A43B4 40%, #8A3686 75%, #C0457F 100%); }
+.grad-dark    { background: linear-gradient(150deg, #2C1B39 0%, #3E458E 45%, #6B3F98 100%); }
+.grad-warm    { background: linear-gradient(135deg, #83316B 0%, #A23878 50%, #C0457F 100%); }
+.grad-cool    { background: linear-gradient(135deg, #3154B8 0%, #3E458E 60%, #4A4FB2 100%); }
+.grad-surface { background: linear-gradient(135deg, #1a0f2e 0%, #251a35 100%); }
+
+/* Text */
+.brand-text  { color: #6B3F98; }
+.brand-pink  { color: #C0457F; }
+
+/* Backgrounds */
+.brand-bg       { background-color: #6B3F98; }
+.brand-light-bg { background-color: rgba(174,153,176,0.12); }
+.brand-card     { background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); }
+.brand-card-sm  { background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.12); }
+
+/* Chips */
+.chip-active { background-color: #6B3F98; color: #fff; }
+.chip-idle   { background-color: rgba(174,153,176,0.12); color: #AE99B0; }
+
+[data-lucide] { display: block; }
+
+/* Section divider */
+.sect-divider {
+    height: 6px;
+    background-color: #F8FAFC;
+    border-top: 1px solid rgba(0,0,0,0.02);
+    border-bottom: 1px solid rgba(0,0,0,0.02);
+}
+
+/* Partner logo pill */
+.partner-pill {
+    background: #ffffff;
+    border: 1px solid rgba(107,63,152,0.15);
+    border-radius: 8px;
+    padding: 6px 12px;
+    font-size: 11px;
+    font-weight: 700;
+    color: #6B3F98;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+/* Timeline connector */
+.timeline-item:not(:last-child)::after {
+    content: '';
+    position: absolute;
+    left: 17px;
+    top: 30px;
+    bottom: -15px;
+    width: 1.5px;
+    background: linear-gradient(to bottom, #C0457F, rgba(192,69,127,0.1));
+}
+
+/* Glow effects */
+.glow-purple { box-shadow: 0 4px 20px rgba(107,63,152,0.5); }
+.glow-pink   { box-shadow: 0 4px 20px rgba(192,69,127,0.4); }
+.glow-blue   { box-shadow: 0 4px 20px rgba(49,84,184,0.4); }
+
+/* Glass card */
+.glass {
+    background: rgba(255,255,255,0.07);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255,255,255,0.12);
+}
+.glass-light {
+    background: rgba(255,255,255,0.12);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(255,255,255,0.18);
+}
+
+/* Pulse ring on avatar */
+@keyframes pulseRing {
+    0%   { transform: scale(1);   opacity: .8; }
+    100% { transform: scale(1.5); opacity: 0;  }
+}
+.pulse-ring::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    border: 2px solid #C0457F;
+    animation: pulseRing 1.6s ease-out infinite;
+}
+
+/* Counter animation */
+@keyframes countUp { from { opacity:0; transform:translateY(8px) } to { opacity:1; transform:translateY(0) } }
+.stat-val { animation: countUp .5s ease forwards; }
+
+/* ============================================================
+   BOTTOM FLOATING NAV — Kredivo / iOS Style
+   ============================================================ */
+.floatnav-container {
+    position: fixed;
+    bottom: 12px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: calc(100% - 16px);
+    max-width: 440px;
+    z-index: 50;
+}
+.floatnav-bar {
+    position: relative;
+    background: #ffffff;
+    border: 1px solid rgba(0,0,0,0.01);
+    border-radius: 18px;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.06);
+    height: 58px;
+    display: flex;
+    align-items: center;
+    justify-content: space-around;
+    padding: 0 4px;
+    z-index: 10;
+}
+.floatnav-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    flex: 1;
+    cursor: pointer;
+    text-decoration: none;
+    -webkit-tap-highlight-color: transparent;
+    transition: transform 0.1s ease;
+    padding-top: 2px;
+    z-index: 20;
+    gap: 3px;
+    background: none;
+    border: none;
+}
+.floatnav-item:active { transform: scale(0.92); }
+.floatnav-icon {
+    width: 22px;
+    height: 22px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 1px;
+}
+.floatnav-label {
+    font-size: 12px;
+    line-height: 1.1;
+}
+
+/* Center bulge and button */
+.floatnav-bulge-wrapper {
+    position: absolute;
+    top: -13px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 46px;
+    height: 46px;
+    border-radius: 50%;
+    background: #ffffff;
+    z-index: 11;
+}
+.floatnav-bulge-mask {
+    position: absolute;
+    top: 0px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 44px;
+    height: 10px;
+    background: #ffffff;
+    z-index: 12;
+}
+.floatnav-sos-btn {
+    position: absolute;
+    top: -8px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #3154B8 0%, #6B3F98 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 13;
+    transition: transform 0.1s ease;
+    text-decoration: none;
+}
+.floatnav-sos-btn:active { transform: scale(0.9); }
+
+@keyframes sosPulse {
+    0%, 100% { box-shadow: 0 4px 12px rgba(49,84,184,0.3); }
+    50%       { box-shadow: 0 6px 18px rgba(49,84,184,0.45); }
+}
+.floatnav-sos-btn { animation: sosPulse 2.4s ease-in-out infinite; }
