@@ -49,8 +49,8 @@ new #[Layout('layouts.guest')] class extends Component
             'dokter':  { label: 'Driver + Dokter & Perawat',  fee: 350000, desc: 'Tim medis lengkap' }
         },
 
-        // Coordinate & Landmark Parser
-        parseCoords(text, defaultLat, defaultLng) {
+        // Coordinate & Landmark Parser with Fallback Geocoding
+        parseCoords(text, defaultLat = -6.8906, defaultLng = 107.6106) {
             if (!text) return [defaultLat, defaultLng];
             let match = text.match(/\(\s*(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)\s*\)/);
             if (match) {
@@ -67,7 +67,7 @@ new #[Layout('layouts.guest')] class extends Component
             if (lower.includes('gedung sate')) return [-6.9025, 107.6186];
             if (lower.includes('jakarta')) return [-6.2088, 106.8456];
 
-            return [defaultLat, defaultLng];
+            return defaultLat !== null ? [defaultLat, defaultLng] : null;
         },
 
         get pickupCoords() {
@@ -78,8 +78,29 @@ new #[Layout('layouts.guest')] class extends Component
             return this.parseCoords(this.destination, -6.9315, 107.6590);
         },
 
-        // Real Haversine Road Distance Calculation
+        async getGeocodeCoords(text, defaultLat, defaultLng) {
+            let direct = this.parseCoords(text, null, null);
+            if (direct) return direct;
+
+            try {
+                let url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(text)}`;
+                let res = await fetch(url);
+                let data = await res.json();
+                if (data && data.length > 0) {
+                    return [parseFloat(data[0].lat), parseFloat(data[0].lon)];
+                }
+            } catch (e) {}
+
+            return [defaultLat, defaultLng];
+        },
+
+        // OSRM Real Road Distance & Time State
+        osrmRoadDistanceKm: null,
+        osrmRoadDurationMins: null,
+
+        // Real Road Distance Calculation
         get distanceKm() {
+            if (this.osrmRoadDistanceKm) return this.osrmRoadDistanceKm;
             let [lat1, lon1] = this.pickupCoords;
             let [lat2, lon2] = this.destCoords;
             
@@ -96,6 +117,7 @@ new #[Layout('layouts.guest')] class extends Component
         },
 
         get durationMins() {
+            if (this.osrmRoadDurationMins) return this.osrmRoadDurationMins;
             return Math.max(12, Math.round(this.distanceKm * 2.2));
         },
 
@@ -107,19 +129,19 @@ new #[Layout('layouts.guest')] class extends Component
             return 8;
         },
 
-        // Result Route Map Instance & Sync
+        // Result Route Map Instance & OSRM Real Street Routing Engine
         resultMap: null,
         pickupMarker: null,
         destMarker: null,
         routeLine: null,
 
         initResultMap() {
-            setTimeout(() => {
+            setTimeout(async () => {
                 let el = document.getElementById('leaflet-result-map');
                 if (!el || typeof L === 'undefined') return;
 
-                let p = this.pickupCoords;
-                let d = this.destCoords;
+                let p = await this.getGeocodeCoords(this.pickup, -6.8906, 107.6106);
+                let d = await this.getGeocodeCoords(this.destination, -6.9315, 107.6590);
 
                 if (!this.resultMap) {
                     this.resultMap = L.map(el, { zoomControl: false }).setView(p, 12);
@@ -151,15 +173,44 @@ new #[Layout('layouts.guest')] class extends Component
                     fillOpacity: 1
                 }).addTo(this.resultMap).bindPopup('<b>Tujuan:</b> ' + this.destination);
 
-                // Connecting Route Line (Purple)
+                // Try OSRM Real Street Routing Engine (Trace Actual Road Geometry)
+                try {
+                    let osrmUrl = `https://router.project-osrm.org/route/v1/driving/${p[1]},${p[0]};${d[1]},${d[0]}?overview=full&geometries=geojson`;
+                    let res = await fetch(osrmUrl);
+                    let data = await res.json();
+
+                    if (data.routes && data.routes.length > 0 && data.routes[0].geometry) {
+                        let route = data.routes[0];
+                        let roadCoords = route.geometry.coordinates.map(c => [c[1], c[0]]);
+
+                        this.osrmRoadDistanceKm = Math.round((route.distance / 1000) * 10) / 10;
+                        this.osrmRoadDurationMins = Math.max(8, Math.round(route.duration / 60));
+
+                        this.routeLine = L.polyline(roadCoords, {
+                            color: '#6B3F98',
+                            weight: 5,
+                            opacity: 0.9,
+                            lineJoin: 'round',
+                            lineCap: 'round'
+                        }).addTo(this.resultMap);
+
+                        let bounds = L.latLngBounds(roadCoords);
+                        this.resultMap.fitBounds(bounds, { padding: [35, 35] });
+                        this.resultMap.invalidateSize();
+                        return;
+                    }
+                } catch (e) {
+                    console.log('OSRM routing fallback to straight line');
+                }
+
+                // Fallback Polyline if OSRM is offline
                 this.routeLine = L.polyline([p, d], {
                     color: '#6B3F98',
                     weight: 4,
                     opacity: 0.85,
-                    dashArray: '8, 8'
+                    dashArray: '6, 6'
                 }).addTo(this.resultMap);
 
-                // Auto Fit Bounds
                 let bounds = L.latLngBounds([p, d]);
                 this.resultMap.fitBounds(bounds, { padding: [35, 35] });
                 this.resultMap.invalidateSize();
@@ -262,14 +313,28 @@ new #[Layout('layouts.guest')] class extends Component
             }, 300);
         },
 
-        confirmMapPicker() {
-            let label = `Koordinat Peta (${this.pickerLat}, ${this.pickerLng})`;
-            if (this.pickerTarget === 'pickup') {
-                this.pickup = label;
-            } else {
-                this.destination = label;
-            }
+        async confirmMapPicker() {
+            let lat = this.pickerLat;
+            let lng = this.pickerLng;
+            let target = this.pickerTarget;
             this.showMapPicker = false;
+
+            let fallbackLabel = `Titik Peta (${lat}, ${lng})`;
+            if (target === 'pickup') this.pickup = fallbackLabel;
+            else this.destination = fallbackLabel;
+
+            try {
+                let res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`);
+                let data = await res.json();
+                if (data && data.display_name) {
+                    let parts = data.display_name.split(',').map(s => s.trim());
+                    let cleanAddr = parts.slice(0, 3).join(', ');
+                    if (target === 'pickup') this.pickup = cleanAddr;
+                    else this.destination = cleanAddr;
+                }
+            } catch (e) {
+                console.log('Reverse geocoding error');
+            }
         },
 
         // Dynamic Nearby Locations & Hospitals Database
@@ -300,27 +365,32 @@ new #[Layout('layouts.guest')] class extends Component
             }
             this.isGpsLoading = true;
             navigator.geolocation.getCurrentPosition(
-                (pos) => {
-                    this.isGpsLoading = false;
+                async (pos) => {
                     let lat = pos.coords.latitude.toFixed(5);
                     let lng = pos.coords.longitude.toFixed(5);
-                    this.pickup = `Lokasi Presisi GPS (${lat}, ${lng})`;
-                    
-                    // Dynamically prepend nearby GPS hospital presets
-                    this.nearbyPickups = [
-                        { label: '📍 GPS Terdeteksi (' + lat + ', ' + lng + ')', isGps: true },
-                        { label: '🏥 RS Terdekat (Area GPS)', value: `RS Terdekat dari GPS (${lat}, ${lng})` },
-                        { label: '🏥 RSHS Bandung', value: 'RSUP Dr. Hasan Sadikin, Bandung' },
-                        { label: '🏥 RS Dustira Cimahi', value: 'RS Dustira, Cimahi' },
-                        { label: '🏛️ Gedung Sate', value: 'Gedung Sate, Bandung' },
-                    ];
+
+                    try {
+                        let res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`);
+                        let data = await res.json();
+                        if (data && data.display_name) {
+                            let parts = data.display_name.split(',').map(s => s.trim());
+                            let cleanAddr = parts.slice(0, 3).join(', ');
+                            this.pickup = cleanAddr;
+                        } else {
+                            this.pickup = `Lokasi GPS (${lat}, ${lng})`;
+                        }
+                    } catch (e) {
+                        this.pickup = `Lokasi GPS (${lat}, ${lng})`;
+                    } finally {
+                        this.isGpsLoading = false;
+                    }
                 },
                 (err) => {
                     this.isGpsLoading = false;
-                    alert('Gagal mengambil lokasi GPS. Memakai titik perkiraan.');
+                    alert('Gagal mengambil lokasi GPS. Memakai RSHS Bandung.');
                     this.pickup = 'RSUP Dr. Hasan Sadikin, Bandung';
                 },
-                { enableHighAccuracy: true, timeout: 8000 }
+                { enableHighAccuracy: true, timeout: 10000 }
             );
         },
 
@@ -391,14 +461,14 @@ new #[Layout('layouts.guest')] class extends Component
                 <div class="flex items-center justify-between mb-1">
                     <label class="text-[12px] font-bold text-slate-700 flex items-center gap-1.5">
                         <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
-                        Lokasi Penjemputan (Asal)
+                        Lokasi Asal
                     </label>
                     <button type="button" @click="openMapPicker('pickup')" class="text-[11px] font-bold text-[#6B3F98] flex items-center gap-1 hover:underline">
                         🗺️ Pilih di Peta
                     </button>
                 </div>
                 <div class="relative">
-                    <input type="text" x-model="pickup" placeholder="Masukkan alamat penjemputan..."
+                    <input type="text" x-model="pickup" placeholder="Masukkan lokasi asal penjemputan..."
                            class="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-3.5 py-2.5 text-[13px] text-slate-800 font-semibold outline-none focus:border-[#6B3F98] focus:bg-white focus:ring-2 focus:ring-[#6B3F98]/20 transition-all">
                     <svg class="w-4 h-4 text-emerald-600 absolute left-3 top-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
                 </div>
@@ -420,7 +490,7 @@ new #[Layout('layouts.guest')] class extends Component
                 <div class="flex items-center justify-between mb-1">
                     <label class="text-[12px] font-bold text-slate-700 flex items-center gap-1.5">
                         <span class="w-2 h-2 rounded-full bg-red-500"></span>
-                        Lokasi Tujuan (Rumah Sakit)
+                        Lokasi Tujuan
                     </label>
                     <button type="button" @click="openMapPicker('destination')" class="text-[11px] font-bold text-[#6B3F98] flex items-center gap-1 hover:underline">
                         🗺️ Pilih di Peta
@@ -602,15 +672,23 @@ new #[Layout('layouts.guest')] class extends Component
              ================================================================ --}}
         <div class="bg-white rounded-2xl border border-slate-100 shadow-md overflow-hidden flex flex-col">
             
-            {{-- Header --}}
-            <div class="bg-slate-900 px-4 py-3 text-white flex items-center justify-between">
-                <div class="flex items-center gap-2">
-                    <svg class="w-4 h-4 text-[#D4AAFF]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l5.447 2.724A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"/></svg>
-                    <span class="text-[13.5px] font-bold">Hasil Kalkulasi Rute & Tarif</span>
+            {{-- Synchronized Route Address Display Card --}}
+            <div class="bg-slate-800 text-white px-4 py-2.5 border-b border-slate-700 flex flex-col gap-1.5">
+                <div class="flex items-start gap-2 text-[12px]">
+                    <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 mt-1 flex-shrink-0"></span>
+                    <div class="leading-tight">
+                        <span class="text-[9.5px] uppercase tracking-wider text-slate-400 font-bold block">Lokasi Asal</span>
+                        <span class="font-extrabold text-emerald-200" x-text="pickup"></span>
+                    </div>
                 </div>
-                <span class="text-[10px] font-extrabold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-2 py-0.5 rounded-full">
-                    Kalkulator Aktif
-                </span>
+                <div class="w-full h-px bg-slate-700/60 my-0.5"></div>
+                <div class="flex items-start gap-2 text-[12px]">
+                    <span class="w-2.5 h-2.5 rounded-full bg-red-400 mt-1 flex-shrink-0"></span>
+                    <div class="leading-tight">
+                        <span class="text-[9.5px] uppercase tracking-wider text-slate-400 font-bold block">Lokasi Tujuan</span>
+                        <span class="font-extrabold text-red-200" x-text="destination"></span>
+                    </div>
+                </div>
             </div>
 
             {{-- Interactive Leaflet Result Route Map Container --}}
