@@ -172,7 +172,6 @@ new #[Layout('layouts.guest')] class extends Component
     }
     .floatnav-label {
         font-size: 10px;
-        font-weight: 700;
         line-height: 1.1;
     }
     
@@ -987,7 +986,7 @@ new #[Layout('layouts.guest')] class extends Component
                        :class="activeTab === 'home' ? 'text-[#6B3F98]' : 'text-slate-400'"></i>
                 </div>
                 <span class="floatnav-label"
-                      :class="activeTab === 'home' ? 'text-[#6B3F98]' : 'text-slate-400'">Beranda</span>
+                      :class="activeTab === 'home' ? 'text-[#6B3F98] font-bold' : 'text-slate-400 font-medium'">Beranda</span>
             </a>
 
             {{-- Layanan --}}
@@ -997,14 +996,14 @@ new #[Layout('layouts.guest')] class extends Component
                        :class="activeTab === 'layanan' ? 'text-[#6B3F98]' : 'text-slate-400'"></i>
                 </div>
                 <span class="floatnav-label"
-                      :class="activeTab === 'layanan' ? 'text-[#6B3F98]' : 'text-slate-400'">Layanan</span>
+                      :class="activeTab === 'layanan' ? 'text-[#6B3F98] font-bold' : 'text-slate-400 font-medium'">Layanan</span>
             </a>
 
             {{-- Middle Column: Placeholder for Cek Rute bulging button & label --}}
             <a href="#wilayah" @click="activeTab = 'rute'" class="floatnav-item">
                 <div class="floatnav-icon opacity-0"></div>
-                <span class="floatnav-label text-slate-400"
-                      :class="activeTab === 'rute' ? 'text-[#6B3F98]' : 'text-slate-400'">Cek Rute</span>
+                <span class="floatnav-label"
+                      :class="activeTab === 'rute' ? 'text-[#6B3F98] font-bold' : 'text-slate-400 font-medium'">Cek Rute</span>
             </a>
 
             {{-- Donasi --}}
@@ -1014,7 +1013,7 @@ new #[Layout('layouts.guest')] class extends Component
                        :class="activeTab === 'donasi' ? 'text-[#6B3F98]' : 'text-slate-400'"></i>
                 </div>
                 <span class="floatnav-label"
-                      :class="activeTab === 'donasi' ? 'text-[#6B3F98]' : 'text-slate-400'">Donasi</span>
+                      :class="activeTab === 'donasi' ? 'text-[#6B3F98] font-bold' : 'text-slate-400 font-medium'">Donasi</span>
             </a>
 
             {{-- Lainnya --}}
@@ -1024,7 +1023,7 @@ new #[Layout('layouts.guest')] class extends Component
                        :class="activeTab === 'lainnya' ? 'text-[#6B3F98]' : 'text-slate-400'"></i>
                 </div>
                 <span class="floatnav-label"
-                      :class="activeTab === 'lainnya' ? 'text-[#6B3F98]' : 'text-slate-400'">Lainnya</span>
+                      :class="activeTab === 'lainnya' ? 'text-[#6B3F98] font-bold' : 'text-slate-400 font-medium'">Lainnya</span>
             </button>
 
         </nav>
