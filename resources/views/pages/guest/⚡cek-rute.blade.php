@@ -524,16 +524,14 @@ new #[Layout('layouts.guest')] class extends Component
                            class="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-3.5 py-2.5 text-[13px] text-slate-800 font-semibold outline-none focus:border-[#6B3F98] focus:bg-white focus:ring-2 focus:ring-[#6B3F98]/20 transition-all">
                     <svg class="w-4 h-4 text-emerald-600 absolute left-3 top-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
                 </div>
-                {{-- Quick Presets & Dynamic Nearby Locations --}}
-                <div class="flex gap-1.5 mt-2 overflow-x-auto scrollbar-hide">
-                    <template x-for="item in nearbyPickups" :key="item.label">
-                        <button type="button"
-                                @click="item.isGps ? getGpsLocation() : pickup = item.value"
-                                class="text-[11px] font-semibold px-2.5 py-1 rounded-lg border whitespace-nowrap transition-all flex items-center gap-1 active:scale-95"
-                                :class="item.isGps ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100 shadow-2xs font-bold' : 'bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200'">
-                            <span x-text="item.label"></span>
-                        </button>
-                    </template>
+                {{-- Single Preset Button: Lokasi GPS Saya Only --}}
+                <div class="mt-2">
+                    <button type="button" @click="getGpsLocation()"
+                            class="text-[11px] font-bold px-3 py-1.5 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition-all flex items-center gap-1.5 shadow-2xs active:scale-95">
+                        <svg x-show="!isGpsLoading" class="w-3.5 h-3.5 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                        <svg x-show="isGpsLoading" class="w-3.5 h-3.5 text-emerald-600 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+                        <span x-text="isGpsLoading ? 'Mengambil Akses GPS...' : '📍 Gunakan Lokasi GPS Saya'"></span>
+                    </button>
                 </div>
             </div>
 
