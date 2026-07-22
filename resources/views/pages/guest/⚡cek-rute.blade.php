@@ -151,20 +151,21 @@ new #[Layout('layouts.guest')] class extends Component
                     }).addTo(this.resultMap);
                 }
 
-                if (this.pickupMarker) this.resultMap.removeLayer(this.pickupMarker);
-                if (this.destMarker) this.resultMap.removeLayer(this.destMarker);
-                if (this.routeLine) this.resultMap.removeLayer(this.routeLine);
+                // Immediately purge all existing markers and old route polylines
+                if (this.pickupMarker) { this.resultMap.removeLayer(this.pickupMarker); this.pickupMarker = null; }
+                if (this.destMarker) { this.resultMap.removeLayer(this.destMarker); this.destMarker = null; }
+                if (this.routeLine) { this.resultMap.removeLayer(this.routeLine); this.routeLine = null; }
 
-                // Pickup Marker (Green)
+                // Pickup Marker (Green Circle)
                 this.pickupMarker = L.circleMarker(p, {
                     radius: 9,
                     fillColor: '#10B981',
                     color: '#FFFFFF',
                     weight: 3,
                     fillOpacity: 1
-                }).addTo(this.resultMap).bindPopup('<b>Jemput:</b> ' + this.pickup);
+                }).addTo(this.resultMap).bindPopup('<b>Asal:</b> ' + this.pickup);
 
-                // Dest Marker (Red)
+                // Dest Marker (Red Circle)
                 this.destMarker = L.circleMarker(d, {
                     radius: 9,
                     fillColor: '#EF4444',
@@ -173,7 +174,7 @@ new #[Layout('layouts.guest')] class extends Component
                     fillOpacity: 1
                 }).addTo(this.resultMap).bindPopup('<b>Tujuan:</b> ' + this.destination);
 
-                // Try OSRM Real Street Routing Engine (Trace Actual Road Geometry)
+                // OSRM Real Road Geometry Engine
                 try {
                     let osrmUrl = `https://router.project-osrm.org/route/v1/driving/${p[1]},${p[0]};${d[1]},${d[0]}?overview=full&geometries=geojson`;
                     let res = await fetch(osrmUrl);
@@ -186,9 +187,10 @@ new #[Layout('layouts.guest')] class extends Component
                         this.osrmRoadDistanceKm = Math.round((route.distance / 1000) * 10) / 10;
                         this.osrmRoadDurationMins = Math.max(8, Math.round(route.duration / 60));
 
+                        // Solid thick road polyline following actual street geometry
                         this.routeLine = L.polyline(roadCoords, {
                             color: '#6B3F98',
-                            weight: 5,
+                            weight: 6,
                             opacity: 0.9,
                             lineJoin: 'round',
                             lineCap: 'round'
@@ -200,15 +202,14 @@ new #[Layout('layouts.guest')] class extends Component
                         return;
                     }
                 } catch (e) {
-                    console.log('OSRM routing fallback to straight line');
+                    console.log('OSRM routing fetch error');
                 }
 
-                // Fallback Polyline if OSRM is offline
+                // Smooth road fallback
                 this.routeLine = L.polyline([p, d], {
                     color: '#6B3F98',
-                    weight: 4,
-                    opacity: 0.85,
-                    dashArray: '6, 6'
+                    weight: 5,
+                    opacity: 0.9
                 }).addTo(this.resultMap);
 
                 let bounds = L.latLngBounds([p, d]);
@@ -337,7 +338,53 @@ new #[Layout('layouts.guest')] class extends Component
             }
         },
 
-        // Dynamic Nearby Locations & Hospitals Database
+        // Dynamic Master Hospitals Database & Distance Calculator
+        allHospitalsDb: [
+            { label: 'RSHS Bandung', value: 'RSUP Dr. Hasan Sadikin, Bandung', lat: -6.8906, lng: 107.6106 },
+            { label: 'RS Al Islam', value: 'RS Al Islam Bandung', lat: -6.9315, lng: 107.6590 },
+            { label: 'RS Immanuel', value: 'RS Immanuel Bandung', lat: -6.9388, lng: 107.5956 },
+            { label: 'RS Santosa Central', value: 'RS Santosa Central Bandung', lat: -6.9152, lng: 107.6012 },
+            { label: 'RS Borromeus Dago', value: 'RS Santo Borromeus Dago', lat: -6.8967, lng: 107.6163 },
+            { label: 'RS Advent Cihampelas', value: 'RS Advent Cihampelas', lat: -6.8890, lng: 107.6050 },
+            { label: 'RS Mayapada Buah Batu', value: 'RS Mayapada Buah Batu', lat: -6.9450, lng: 107.6280 },
+            { label: 'RS Dustira Cimahi', value: 'RS Dustira, Cimahi', lat: -6.8722, lng: 107.5422 },
+            { label: 'RSUD Cibabat Cimahi', value: 'RSUD Cibabat Cimahi', lat: -6.8850, lng: 107.5350 },
+            { label: 'RS Edelweiss', value: 'RS Edelweiss Bandung', lat: -6.9410, lng: 107.6620 },
+            { label: 'RS Hermina Pasteur', value: 'RS Hermina Pasteur', lat: -6.8940, lng: 107.5920 },
+            { label: 'RS Muhammadiyah', value: 'RS Muhammadiyah Bandung', lat: -6.9280, lng: 107.6210 },
+            { label: 'RS Rotinsulu', value: 'RS Rotinsulu Ciumbuleuit', lat: -6.8710, lng: 107.6080 },
+            { label: 'RS Halmahera', value: 'RS Halmahera Bandung', lat: -6.9080, lng: 107.6150 },
+            { label: 'RS Melinda 2', value: 'RS Melinda 2 Pajajaran', lat: -6.9020, lng: 107.5980 },
+            { label: 'RS St. Yusup', value: 'RS St. Yusup Cikutra', lat: -6.9020, lng: 107.6380 }
+        ],
+
+        updateNearbyDestinationHospitals() {
+            let [pLat, pLng] = this.pickupCoords;
+            let calcDist = (lat1, lon1, lat2, lon2) => {
+                let R = 6371;
+                let dLat = (lat2 - lat1) * Math.PI / 180;
+                let dLon = (lon2 - lon1) * Math.PI / 180;
+                let a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                        Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+                        Math.sin(dLon/2) * Math.sin(dLon/2);
+                let c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+                return Math.round(R * c * 1.35 * 10) / 10;
+            };
+
+            let sorted = this.allHospitalsDb.map(h => {
+                let d = calcDist(pLat, pLng, h.lat, h.lng);
+                return {
+                    label: `🏥 ${h.label} (${d} km)`,
+                    value: h.value,
+                    dist: d
+                };
+            }).sort((a, b) => a.dist - b.dist);
+
+            let top5 = sorted.slice(0, 5);
+            top5.push({ label: '🏙️ Luar Kota / Jakarta', value: 'Luar Kota (Jakarta / Jawa)' });
+            this.nearbyDestinations = top5;
+        },
+
         nearbyPickups: [
             { label: '📍 Lokasi GPS Saya', isGps: true },
             { label: '🏥 RSHS Bandung', value: 'RSUP Dr. Hasan Sadikin, Bandung' },
@@ -347,16 +394,7 @@ new #[Layout('layouts.guest')] class extends Component
             { label: '✈️ Bandara Husein', value: 'Bandara Husein Sastranegara' },
         ],
 
-        nearbyDestinations: [
-            { label: '🏥 RS Al Islam', value: 'RS Al Islam Bandung' },
-            { label: '🏥 RS Immanuel', value: 'RS Immanuel Bandung' },
-            { label: '🏥 RS Santosa Central', value: 'RS Santosa Central Bandung' },
-            { label: '🏥 RS Borromeus', value: 'RS Santo Borromeus Dago' },
-            { label: '🏥 RS Advent', value: 'RS Advent Cihampelas' },
-            { label: '🏥 RS Mayapada', value: 'RS Mayapada Buah Batu' },
-            { label: '🚄 Stasiun WHOOSH', value: 'Stasiun WHOOSH Tegalluar' },
-            { label: '🏙️ Luar Kota / Jakarta', value: 'Luar Kota (Jakarta / Jawa)' },
-        ],
+        nearbyDestinations: [],
 
         getGpsLocation() {
             if (!navigator.geolocation) {
