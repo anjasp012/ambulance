@@ -12,9 +12,15 @@ new #[Layout('layouts.guest')] class extends Component
 <div class="min-h-screen bg-slate-50 flex flex-col pb-12 text-slate-800 text-[14px]"
      id="top"
      x-init="
-        $watch('pickup', () => initResultMap());
-        $watch('destination', () => initResultMap());
-        initResultMap();
+        $watch('pickup', () => {
+            updateNearbyDestinationHospitals();
+            initResultMap();
+        });
+        $watch('destination', () => {
+            initResultMap();
+        });
+        updateNearbyDestinationHospitals();
+        getGpsLocation(true);
      "
      x-data="{
         pickup: 'RSUP Dr. Hasan Sadikin, Bandung',
@@ -396,9 +402,9 @@ new #[Layout('layouts.guest')] class extends Component
 
         nearbyDestinations: [],
 
-        getGpsLocation() {
+        getGpsLocation(silent = false) {
             if (!navigator.geolocation) {
-                alert('Browser Anda tidak mendukung lokasi GPS');
+                if (!silent) alert('Browser Anda tidak mendukung lokasi GPS');
                 return;
             }
             this.isGpsLoading = true;
@@ -415,20 +421,28 @@ new #[Layout('layouts.guest')] class extends Component
                             let cleanAddr = parts.slice(0, 3).join(', ');
                             this.pickup = cleanAddr;
                         } else {
-                            this.pickup = `Lokasi GPS (${lat}, ${lng})`;
+                            this.pickup = `Lokasi Presisi GPS (${lat}, ${lng})`;
                         }
                     } catch (e) {
-                        this.pickup = `Lokasi GPS (${lat}, ${lng})`;
+                        this.pickup = `Lokasi Presisi GPS (${lat}, ${lng})`;
                     } finally {
                         this.isGpsLoading = false;
+                        this.updateNearbyDestinationHospitals();
+                        if (this.nearbyDestinations && this.nearbyDestinations.length > 0) {
+                            this.destination = this.nearbyDestinations[0].value;
+                        }
+                        this.initResultMap();
                     }
                 },
                 (err) => {
                     this.isGpsLoading = false;
-                    alert('Gagal mengambil lokasi GPS. Memakai RSHS Bandung.');
-                    this.pickup = 'RSUP Dr. Hasan Sadikin, Bandung';
+                    if (!silent) {
+                        alert('Akses lokasi GPS tidak diizinkan. Memakai RSHS Bandung.');
+                    }
+                    this.updateNearbyDestinationHospitals();
+                    this.initResultMap();
                 },
-                { enableHighAccuracy: true, timeout: 10000 }
+                { enableHighAccuracy: true, timeout: 8000 }
             );
         },
 
