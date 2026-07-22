@@ -284,21 +284,23 @@ new #[Layout('layouts.guest')] class extends Component
 
         openMapPicker(target) {
             this.pickerTarget = target;
-            this.pickerTitle = target === 'pickup' ? 'Pilih Titik Penjemputan di Peta' : 'Pilih Titik Tujuan di Peta';
+            this.pickerTitle = target === 'pickup' ? 'Pilih Lokasi Asal di Peta' : 'Pilih Lokasi Tujuan di Peta';
             this.showMapPicker = true;
             
-            setTimeout(() => {
+            setTimeout(async () => {
                 if (typeof L === 'undefined') return;
                 let container = document.getElementById('leaflet-picker-canvas');
                 if (!container) return;
                 
-                let initialLat = target === 'pickup' ? -6.8906 : -6.9315;
-                let initialLng = target === 'pickup' ? 107.6106 : 107.6590;
+                // Dynamically start modal map at current Lokasi Asal coordinates
+                let [initialLat, initialLng] = target === 'pickup'
+                    ? await this.getGeocodeCoords(this.pickup, -6.8906, 107.6106)
+                    : await this.getGeocodeCoords(this.destination, this.pickupCoords[0], this.pickupCoords[1]);
 
                 if (!this.mapInstance) {
                     this.mapInstance = L.map(container, {
                         zoomControl: true
-                    }).setView([initialLat, initialLng], 14);
+                    }).setView([initialLat, initialLng], 15);
 
                     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
                         maxZoom: 19,
@@ -311,11 +313,11 @@ new #[Layout('layouts.guest')] class extends Component
                         this.pickerLng = center.lng.toFixed(5);
                     });
                 } else {
-                    this.mapInstance.setView([initialLat, initialLng], 14);
+                    this.mapInstance.setView([initialLat, initialLng], 15);
                 }
 
-                this.pickerLat = initialLat.toFixed(5);
-                this.pickerLng = initialLng.toFixed(5);
+                this.pickerLat = parseFloat(initialLat).toFixed(5);
+                this.pickerLng = parseFloat(initialLng).toFixed(5);
                 this.mapInstance.invalidateSize();
             }, 300);
         },
