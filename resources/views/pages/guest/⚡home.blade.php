@@ -1095,7 +1095,7 @@ new #[Layout('layouts.guest')] class extends Component
                 @php
                     $drawerMenus = [
                         ['lucide'=>'home',            'label'=>'Beranda',      'link'=>'#top'],
-                        ['lucide'=>'info',            'label'=>'Tentang Kami',  'link'=>'#top'],
+                        ['lucide'=>'info',            'label'=>'Tentang Kami',  'link'=>'/tentang-kami'],
                         ['lucide'=>'layout-grid',     'label'=>'Layanan Medis','link'=>'#layanan'],
                         ['lucide'=>'compass',         'label'=>'Cek Rute',     'link'=>'#wilayah'],
                         ['lucide'=>'truck',           'label'=>'Armada',       'link'=>'#wilayah'],
@@ -1109,7 +1109,7 @@ new #[Layout('layouts.guest')] class extends Component
                     ];
                 @endphp
                 @foreach ($drawerMenus as $item)
-                    <a href="{{ $item['link'] }}" @click="showLainnya = false" class="flex flex-col items-center gap-1.5 p-2 rounded-xl bg-slate-50 border border-slate-100 hover:bg-slate-100 transition-colors">
+                    <a href="{{ $item['link'] }}" {{ str_starts_with($item['link'], '/') ? 'wire:navigate' : '' }} @click="showLainnya = false" class="flex flex-col items-center gap-1.5 p-2 rounded-xl bg-slate-50 border border-slate-100 hover:bg-slate-100 transition-colors">
                         <div class="w-8 h-8 rounded-lg brand-light-bg flex items-center justify-center text-brand flex-shrink-0">
                             <i data-lucide="{{ $item['lucide'] }}" style="width:16px;height:16px;stroke-width:2"></i>
                         </div>
