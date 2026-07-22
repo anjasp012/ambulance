@@ -278,9 +278,57 @@ new #[Layout('layouts.guest')] class extends Component
         pickerTitle: 'Pilih Titik di Peta',
         pickerLat: -6.8906,
         pickerLng: 107.6106,
+        pickerQuery: '',
+        pickerSearchResults: [],
+        isPickerSearching: false,
         mapInstance: null,
         markerInstance: null,
         isGpsLoading: false,
+
+        async searchPickerPlaces() {
+            if (!this.pickerQuery || this.pickerQuery.trim().length < 2) {
+                this.pickerSearchResults = [];
+                return;
+            }
+            this.isPickerSearching = true;
+            let q = this.pickerQuery.toLowerCase();
+
+            let localMatches = this.allHospitalsDb.filter(h => 
+                h.label.toLowerCase().includes(q) || h.value.toLowerCase().includes(q)
+            ).map(h => ({
+                name: h.value,
+                lat: h.lat,
+                lng: h.lng,
+                type: 'hospital'
+            }));
+
+            try {
+                let res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=5&q=${encodeURIComponent(this.pickerQuery + ' Bandung')}`);
+                let data = await res.json();
+                let apiMatches = (data || []).map(item => ({
+                    name: item.display_name.split(',').slice(0, 3).join(', '),
+                    lat: parseFloat(item.lat),
+                    lng: parseFloat(item.lon),
+                    type: 'place'
+                }));
+
+                this.pickerSearchResults = [...localMatches, ...apiMatches].slice(0, 6);
+            } catch (e) {
+                this.pickerSearchResults = localMatches;
+            } finally {
+                this.isPickerSearching = false;
+            }
+        },
+
+        selectPickerSearchResult(place) {
+            this.pickerLat = place.lat.toFixed(5);
+            this.pickerLng = place.lng.toFixed(5);
+            if (this.mapInstance) {
+                this.mapInstance.setView([place.lat, place.lng], 16, { animate: true });
+            }
+            this.pickerQuery = place.name;
+            this.pickerSearchResults = [];
+        },
 
         openMapPicker(target) {
             this.pickerTarget = target;
@@ -876,6 +924,34 @@ new #[Layout('layouts.guest')] class extends Component
                 </button>
             </div>
 
+            {{-- Live Search Input Bar inside Modal --}}
+            <div class="px-3.5 py-2.5 bg-slate-800 border-b border-slate-700 relative">
+                <div class="relative">
+                    <input type="text" x-model="pickerQuery" @input.debounce.300ms="searchPickerPlaces()"
+                           placeholder="🔍 Cari Rumah Sakit / Alamat (misal: RSHS, RS Al Islam)..."
+                           class="w-full bg-slate-900 border border-slate-700 rounded-xl pl-9 pr-8 py-2 text-[12px] text-white placeholder-slate-400 font-medium outline-none focus:border-[#D4AAFF] focus:ring-1 focus:ring-[#D4AAFF]">
+                    <svg class="w-4 h-4 text-slate-400 absolute left-3 top-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+                    <button type="button" x-show="pickerQuery" @click="pickerQuery = ''; pickerSearchResults = []" class="absolute right-2.5 top-2 text-slate-400 hover:text-white">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                    </button>
+                </div>
+
+                {{-- Instant Search Results Dropdown --}}
+                <div x-show="pickerSearchResults.length > 0" x-cloak
+                     class="absolute left-3.5 right-3.5 top-full mt-1 bg-white rounded-xl shadow-2xl border border-slate-200 divide-y divide-slate-100 overflow-hidden z-50 max-h-48 overflow-y-auto">
+                    <template x-for="place in pickerSearchResults" :key="place.name">
+                        <button type="button" @click="selectPickerSearchResult(place)"
+                                class="w-full px-3.5 py-2 text-left hover:bg-slate-50 flex items-center gap-2.5 transition-colors">
+                            <span x-text="place.type === 'hospital' ? '🏥' : '📍'" class="text-[13px]"></span>
+                            <div class="leading-tight overflow-hidden">
+                                <p class="text-[12px] font-bold text-slate-800 truncate" x-text="place.name"></p>
+                                <p class="text-[10px] text-slate-400" x-text="place.lat + ', ' + place.lng"></p>
+                            </div>
+                        </button>
+                    </template>
+                </div>
+            </div>
+
             {{-- Map Canvas with Center Pin Overlay --}}
             <div class="relative w-full bg-slate-200 overflow-hidden" style="height:350px">
                 <div id="leaflet-picker-canvas" class="w-full h-full z-10"></div>
@@ -896,13 +972,21 @@ new #[Layout('layouts.guest')] class extends Component
             </div>
 
             {{-- Coordinates Info & Confirm Button --}}
-            <div class="p-4 bg-white flex flex-col gap-3">
+            <div class="p-4 bg-white flex flex-col gap-2.5">
                 <div class="flex items-center justify-between text-[12.5px] bg-slate-50 p-2.5 rounded-xl border border-slate-200">
                     <span class="text-slate-500 font-medium">Titik Koordinat Selected:</span>
                     <span class="font-extrabold text-[#6B3F98]" x-text="pickerLat + ', ' + pickerLng"></span>
                 </div>
 
-                <div class="flex gap-2">
+                {{-- External Google Maps Option --}}
+                <a :href="'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent((pickerQuery ? pickerQuery : pickerTitle) + ' ' + pickerLat + ',' + pickerLng)"
+                   target="_blank"
+                   class="text-[11.5px] font-bold text-blue-600 hover:text-blue-700 flex items-center justify-center gap-1.5 py-1.5 bg-blue-50/70 rounded-xl border border-blue-100 transition-colors">
+                    <svg class="w-3.5 h-3.5 text-blue-600" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>
+                    🗺️ Buka / Cari di Aplikasi Google Maps
+                </a>
+
+                <div class="flex gap-2 mt-0.5">
                     <button type="button" @click="showMapPicker = false" class="flex-1 py-2.5 rounded-xl border border-slate-300 font-bold text-slate-600 text-[13px]">
                         Batal
                     </button>
