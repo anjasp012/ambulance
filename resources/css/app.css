@@ -262,7 +262,7 @@
     transition: transform 0.1s ease;
     text-decoration: none;
 }
-.floatnav-sos-btn:active { transform: scale(0.9); }
+.floatnav-sos-btn:active { transform: translateX(-50%) scale(0.9); }
 
 @keyframes sosPulse {
     0%, 100% { box-shadow: 0 4px 12px rgba(49,84,184,0.3); }

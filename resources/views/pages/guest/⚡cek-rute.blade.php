@@ -275,15 +275,43 @@ new #[Layout('layouts.guest')] class extends Component
 
         showMapPicker: false,
         pickerTarget: 'pickup',
-        pickerTitle: 'Pilih Titik di Peta',
+        pickerTitle: 'Pilih Lokasi di Peta',
         pickerLat: -6.8906,
         pickerLng: 107.6106,
+        pickerAddressName: 'Mengambil nama lokasi...',
         pickerQuery: '',
         pickerSearchResults: [],
         isPickerSearching: false,
         mapInstance: null,
-        markerInstance: null,
+        moveDebounceTimer: null,
         isGpsLoading: false,
+
+        async updatePickerAddressFromCenter() {
+            let lat = this.pickerLat;
+            let lng = this.pickerLng;
+            this.pickerAddressName = 'Mencari nama lokasi...';
+
+            let local = this.allHospitalsDb.find(h => 
+                Math.abs(h.lat - parseFloat(lat)) < 0.003 && Math.abs(h.lng - parseFloat(lng)) < 0.003
+            );
+            if (local) {
+                this.pickerAddressName = local.value;
+                return;
+            }
+
+            try {
+                let res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`);
+                let data = await res.json();
+                if (data && data.display_name) {
+                    let parts = data.display_name.split(',').map(s => s.trim());
+                    this.pickerAddressName = parts.slice(0, 3).join(', ');
+                } else {
+                    this.pickerAddressName = `Titik Koordinat (${lat}, ${lng})`;
+                }
+            } catch (e) {
+                this.pickerAddressName = `Titik Koordinat (${lat}, ${lng})`;
+            }
+        },
 
         async searchPickerPlaces() {
             if (!this.pickerQuery || this.pickerQuery.trim().length < 2) {
@@ -323,8 +351,9 @@ new #[Layout('layouts.guest')] class extends Component
         selectPickerSearchResult(place) {
             this.pickerLat = place.lat.toFixed(5);
             this.pickerLng = place.lng.toFixed(5);
+            this.pickerAddressName = place.name;
             if (this.mapInstance) {
-                this.mapInstance.setView([place.lat, place.lng], 16, { animate: true });
+                this.mapInstance.flyTo([place.lat, place.lng], 16, { duration: 1 });
             }
             this.pickerQuery = place.name;
             this.pickerSearchResults = [];
@@ -332,66 +361,69 @@ new #[Layout('layouts.guest')] class extends Component
 
         openMapPicker(target) {
             this.pickerTarget = target;
-            this.pickerTitle = target === 'pickup' ? 'Pilih Lokasi Asal di Peta' : 'Pilih Lokasi Tujuan di Peta';
+            this.pickerTitle = target === 'pickup' ? 'Tentukan Lokasi Penjemputan' : 'Tentukan Lokasi Tujuan';
             this.showMapPicker = true;
+            this.pickerQuery = '';
+            this.pickerSearchResults = [];
             
             setTimeout(async () => {
-                if (typeof L === 'undefined') return;
-                let container = document.getElementById('leaflet-picker-canvas');
-                if (!container) return;
+                let container = document.getElementById('gojek-picker-canvas');
+                if (!container || typeof L === 'undefined') return;
                 
-                // Dynamically start modal map at current Lokasi Asal coordinates
                 let [initialLat, initialLng] = target === 'pickup'
                     ? await this.getGeocodeCoords(this.pickup, -6.8906, 107.6106)
                     : await this.getGeocodeCoords(this.destination, this.pickupCoords[0], this.pickupCoords[1]);
 
                 if (!this.mapInstance) {
                     this.mapInstance = L.map(container, {
-                        zoomControl: true
-                    }).setView([initialLat, initialLng], 15);
+                        zoomControl: false,
+                        dragging: true,
+                        touchZoom: true,
+                        scrollWheelZoom: true
+                    }).setView([initialLat, initialLng], 16);
 
                     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
                         maxZoom: 19,
                         attribution: '© OpenStreetMap'
                     }).addTo(this.mapInstance);
 
-                    this.mapInstance.on('move', () => {
+                    let updateCoords = () => {
                         let center = this.mapInstance.getCenter();
                         this.pickerLat = center.lat.toFixed(5);
                         this.pickerLng = center.lng.toFixed(5);
+                    };
+
+                    this.mapInstance.on('move', updateCoords);
+                    this.mapInstance.on('drag', updateCoords);
+                    this.mapInstance.on('moveend', () => {
+                        updateCoords();
+                        clearTimeout(this.moveDebounceTimer);
+                        this.moveDebounceTimer = setTimeout(() => {
+                            this.updatePickerAddressFromCenter();
+                        }, 300);
                     });
                 } else {
-                    this.mapInstance.setView([initialLat, initialLng], 15);
+                    this.mapInstance.setView([initialLat, initialLng], 16);
                 }
 
                 this.pickerLat = parseFloat(initialLat).toFixed(5);
                 this.pickerLng = parseFloat(initialLng).toFixed(5);
-                this.mapInstance.invalidateSize();
-            }, 300);
+                this.updatePickerAddressFromCenter();
+
+                setTimeout(() => {
+                    if (this.mapInstance) this.mapInstance.invalidateSize();
+                }, 150);
+            }, 200);
         },
 
-        async confirmMapPicker() {
-            let lat = this.pickerLat;
-            let lng = this.pickerLng;
-            let target = this.pickerTarget;
-            this.showMapPicker = false;
-
-            let fallbackLabel = `Titik Peta (${lat}, ${lng})`;
-            if (target === 'pickup') this.pickup = fallbackLabel;
-            else this.destination = fallbackLabel;
-
-            try {
-                let res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`);
-                let data = await res.json();
-                if (data && data.display_name) {
-                    let parts = data.display_name.split(',').map(s => s.trim());
-                    let cleanAddr = parts.slice(0, 3).join(', ');
-                    if (target === 'pickup') this.pickup = cleanAddr;
-                    else this.destination = cleanAddr;
-                }
-            } catch (e) {
-                console.log('Reverse geocoding error');
+        confirmMapPicker() {
+            let finalAddr = this.pickerAddressName || `Titik Koordinat (${this.pickerLat}, ${this.pickerLng})`;
+            if (this.pickerTarget === 'pickup') {
+                this.pickup = finalAddr;
+            } else {
+                this.destination = finalAddr;
             }
+            this.showMapPicker = false;
         },
 
         // Dynamic Master Hospitals Database & Distance Calculator
@@ -900,7 +932,7 @@ new #[Layout('layouts.guest')] class extends Component
     </div>
 
     {{-- ================================================================
-         5. INTERACTIVE LEAFLET MAP PICKER MODAL
+         5. UNIFIED GOJEK / GRAB STYLE LOCATION PICKER MODAL
          ================================================================ --}}
     <div x-show="showMapPicker" x-cloak
          x-transition:enter="transition ease-out duration-300"
@@ -912,11 +944,12 @@ new #[Layout('layouts.guest')] class extends Component
          class="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex justify-center items-end sm:items-center p-0 sm:p-4"
          @click.self="showMapPicker = false">
 
-        <div class="w-full max-w-[480px] bg-white rounded-t-3xl sm:rounded-2xl shadow-2xl flex flex-col overflow-hidden max-h-[90vh]">
+        <div class="w-full max-w-[480px] bg-white rounded-t-3xl sm:rounded-2xl shadow-2xl flex flex-col overflow-hidden max-h-[92vh]">
+            
             {{-- Header --}}
             <div class="px-4 py-3.5 bg-slate-900 text-white flex items-center justify-between">
                 <div class="flex items-center gap-2">
-                    <svg class="w-4 h-4 text-[#D4AAFF]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                    <svg class="w-4.5 h-4.5 text-[#D4AAFF]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
                     <span class="text-[14px] font-bold" x-text="pickerTitle"></span>
                 </div>
                 <button type="button" @click="showMapPicker = false" class="w-7 h-7 rounded-full bg-white/10 flex items-center justify-center text-white/80 hover:text-white">
@@ -924,27 +957,27 @@ new #[Layout('layouts.guest')] class extends Component
                 </button>
             </div>
 
-            {{-- Live Search Input Bar inside Modal --}}
-            <div class="px-3.5 py-2.5 bg-slate-800 border-b border-slate-700 relative">
+            {{-- Gojek/Grab Top Search Input Bar --}}
+            <div class="p-3 bg-white border-b border-slate-100 relative shadow-2xs">
                 <div class="relative">
                     <input type="text" x-model="pickerQuery" @input.debounce.300ms="searchPickerPlaces()"
-                           placeholder="🔍 Cari Rumah Sakit / Alamat (misal: RSHS, RS Al Islam)..."
-                           class="w-full bg-slate-900 border border-slate-700 rounded-xl pl-9 pr-8 py-2 text-[12px] text-white placeholder-slate-400 font-medium outline-none focus:border-[#D4AAFF] focus:ring-1 focus:ring-[#D4AAFF]">
-                    <svg class="w-4 h-4 text-slate-400 absolute left-3 top-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
-                    <button type="button" x-show="pickerQuery" @click="pickerQuery = ''; pickerSearchResults = []" class="absolute right-2.5 top-2 text-slate-400 hover:text-white">
+                           placeholder="🔍 Cari lokasi / Rumah Sakit (misal: RSHS, Al Islam...)"
+                           class="w-full bg-slate-100 border border-slate-200 rounded-xl pl-9 pr-8 py-2.5 text-[13px] text-slate-800 font-semibold outline-none focus:border-[#6B3F98] focus:bg-white focus:ring-2 focus:ring-[#6B3F98]/20 transition-all">
+                    <svg class="w-4.5 h-4.5 text-slate-400 absolute left-3 top-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+                    <button type="button" x-show="pickerQuery" @click="pickerQuery = ''; pickerSearchResults = []" class="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-700">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
                     </button>
                 </div>
 
-                {{-- Instant Search Results Dropdown --}}
+                {{-- Instant Search Results Dropdown List --}}
                 <div x-show="pickerSearchResults.length > 0" x-cloak
-                     class="absolute left-3.5 right-3.5 top-full mt-1 bg-white rounded-xl shadow-2xl border border-slate-200 divide-y divide-slate-100 overflow-hidden z-50 max-h-48 overflow-y-auto">
+                     class="absolute left-3 right-3 top-full mt-1 bg-white rounded-xl shadow-2xl border border-slate-200 divide-y divide-slate-100 overflow-hidden z-50 max-h-56 overflow-y-auto">
                     <template x-for="place in pickerSearchResults" :key="place.name">
                         <button type="button" @click="selectPickerSearchResult(place)"
-                                class="w-full px-3.5 py-2 text-left hover:bg-slate-50 flex items-center gap-2.5 transition-colors">
-                            <span x-text="place.type === 'hospital' ? '🏥' : '📍'" class="text-[13px]"></span>
+                                class="w-full px-3.5 py-2.5 text-left hover:bg-slate-50 flex items-center gap-3 transition-colors">
+                            <span x-text="place.type === 'hospital' ? '🏥' : '📍'" class="text-[14px]"></span>
                             <div class="leading-tight overflow-hidden">
-                                <p class="text-[12px] font-bold text-slate-800 truncate" x-text="place.name"></p>
+                                <p class="text-[12.5px] font-bold text-slate-800 truncate" x-text="place.name"></p>
                                 <p class="text-[10px] text-slate-400" x-text="place.lat + ', ' + place.lng"></p>
                             </div>
                         </button>
@@ -952,46 +985,46 @@ new #[Layout('layouts.guest')] class extends Component
                 </div>
             </div>
 
-            {{-- Map Canvas with Center Pin Overlay --}}
-            <div class="relative w-full bg-slate-200 overflow-hidden" style="height:350px">
-                <div id="leaflet-picker-canvas" class="w-full h-full z-10"></div>
+            {{-- Gojek/Grab Interactive Map Canvas with Floating Center Pin --}}
+            <div class="relative w-full bg-slate-200 overflow-hidden" style="height:360px">
+                <div id="gojek-picker-canvas" class="w-full h-full z-10"></div>
                 
-                {{-- Fixed Center Pin Marker --}}
+                {{-- Gojek/Grab Floating Pin Marker --}}
                 <div class="absolute inset-0 flex items-center justify-center pointer-events-none z-30">
-                    <div class="flex flex-col items-center -mt-8">
-                        <div class="w-10 h-10 rounded-full bg-[#6B3F98] text-white flex items-center justify-center shadow-xl ring-4 ring-white animate-bounce-short">
-                            <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                    <div class="flex flex-col items-center -mt-9">
+                        <div class="w-11 h-11 rounded-full bg-[#6B3F98] text-white flex items-center justify-center shadow-2xl ring-4 ring-white animate-bounce-short">
+                            <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
                         </div>
-                        <div class="w-2.5 h-2.5 bg-slate-900 rounded-full opacity-60 blur-2xs mt-0.5"></div>
+                        <div class="w-3 h-3 bg-slate-900 rounded-full opacity-50 blur-2xs mt-1"></div>
                     </div>
                 </div>
 
-                <div class="absolute top-2.5 left-2.5 right-2.5 bg-white/95 backdrop-blur-md p-2 rounded-xl border border-slate-200 text-center shadow-sm z-30 pointer-events-none">
+                {{-- Floating Hint Pill --}}
+                <div class="absolute top-3 left-3 right-3 bg-white/95 backdrop-blur-md p-2 rounded-xl border border-slate-200 text-center shadow-md z-30 pointer-events-none">
                     <p class="text-[11.5px] font-bold text-slate-800">📍 Geser peta untuk menempatkan pin di lokasi presisi</p>
                 </div>
             </div>
 
-            {{-- Coordinates Info & Confirm Button --}}
-            <div class="p-4 bg-white flex flex-col gap-2.5">
-                <div class="flex items-center justify-between text-[12.5px] bg-slate-50 p-2.5 rounded-xl border border-slate-200">
-                    <span class="text-slate-500 font-medium">Titik Koordinat Selected:</span>
-                    <span class="font-extrabold text-[#6B3F98]" x-text="pickerLat + ', ' + pickerLng"></span>
+            {{-- Gojek/Grab Bottom Sheet Info & Confirmation --}}
+            <div class="p-4 bg-white flex flex-col gap-3">
+                <div class="p-3 bg-slate-50 rounded-xl border border-slate-200 flex items-start gap-2.5">
+                    <div class="w-7 h-7 rounded-lg bg-[#6B3F98]/10 text-[#6B3F98] flex items-center justify-center flex-shrink-0 mt-0.5">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/></svg>
+                    </div>
+                    <div class="overflow-hidden leading-tight flex-1">
+                        <p class="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Lokasi Terpilih</p>
+                        <p class="text-[13px] font-extrabold text-slate-800 truncate mt-0.5" x-text="pickerAddressName"></p>
+                        <p class="text-[10.5px] text-slate-500 font-mono mt-0.5" x-text="'Koordinat: ' + pickerLat + ', ' + pickerLng"></p>
+                    </div>
                 </div>
 
-                {{-- External Google Maps Option --}}
-                <a :href="'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent((pickerQuery ? pickerQuery : pickerTitle) + ' ' + pickerLat + ',' + pickerLng)"
-                   target="_blank"
-                   class="text-[11.5px] font-bold text-blue-600 hover:text-blue-700 flex items-center justify-center gap-1.5 py-1.5 bg-blue-50/70 rounded-xl border border-blue-100 transition-colors">
-                    <svg class="w-3.5 h-3.5 text-blue-600" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>
-                    🗺️ Buka / Cari di Aplikasi Google Maps
-                </a>
-
-                <div class="flex gap-2 mt-0.5">
-                    <button type="button" @click="showMapPicker = false" class="flex-1 py-2.5 rounded-xl border border-slate-300 font-bold text-slate-600 text-[13px]">
+                <div class="flex gap-2">
+                    <button type="button" @click="showMapPicker = false" class="py-3 px-4 rounded-xl border border-slate-300 font-bold text-slate-600 text-[13px]">
                         Batal
                     </button>
-                    <button type="button" @click="confirmMapPicker()" class="flex-1 py-2.5 rounded-xl bg-[#6B3F98] text-white font-bold text-[13px] shadow-sm active:scale-95 transition-transform">
-                        ✓ Gunakan Titik Ini
+                    <button type="button" @click="confirmMapPicker()" class="flex-1 py-3 rounded-xl bg-[#6B3F98] text-white font-extrabold text-[14px] shadow-md active:scale-98 transition-all flex items-center justify-center gap-1.5">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"/></svg>
+                        Konfirmasi Lokasi Ini
                     </button>
                 </div>
             </div>
