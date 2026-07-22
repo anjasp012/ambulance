@@ -12,6 +12,9 @@
 
         @vite(['resources/css/app.css', 'resources/js/app.js'])
 
+        <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+        <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
         @livewireStyles
     </head>
     <body class="h-full bg-slate-100 flex justify-center items-start overflow-y-auto">

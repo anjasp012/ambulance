@@ -11,6 +11,11 @@ new #[Layout('layouts.guest')] class extends Component
 
 <div class="min-h-screen bg-slate-50 flex flex-col pb-12 text-slate-800 text-[14px]"
      id="top"
+     x-init="
+        $watch('pickup', () => initResultMap());
+        $watch('destination', () => initResultMap());
+        initResultMap();
+     "
      x-data="{
         pickup: 'RSUP Dr. Hasan Sadikin, Bandung',
         destination: 'RS Al Islam Bandung',
@@ -44,11 +49,50 @@ new #[Layout('layouts.guest')] class extends Component
             'dokter':  { label: 'Driver + Dokter & Perawat',  fee: 350000, desc: 'Tim medis lengkap' }
         },
 
-        // Helper calculations
+        // Coordinate & Landmark Parser
+        parseCoords(text, defaultLat, defaultLng) {
+            if (!text) return [defaultLat, defaultLng];
+            let match = text.match(/\(\s*(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)\s*\)/);
+            if (match) {
+                return [parseFloat(match[1]), parseFloat(match[2])];
+            }
+
+            let lower = text.toLowerCase();
+            if (lower.includes('hasan sadikin') || lower.includes('rshs')) return [-6.8906, 107.6106];
+            if (lower.includes('al islam')) return [-6.9315, 107.6590];
+            if (lower.includes('immanuel')) return [-6.9388, 107.5956];
+            if (lower.includes('santosa')) return [-6.9152, 107.6012];
+            if (lower.includes('borromeus')) return [-6.8967, 107.6163];
+            if (lower.includes('cimahi')) return [-6.8722, 107.5422];
+            if (lower.includes('gedung sate')) return [-6.9025, 107.6186];
+            if (lower.includes('jakarta')) return [-6.2088, 106.8456];
+
+            return [defaultLat, defaultLng];
+        },
+
+        get pickupCoords() {
+            return this.parseCoords(this.pickup, -6.8906, 107.6106);
+        },
+
+        get destCoords() {
+            return this.parseCoords(this.destination, -6.9315, 107.6590);
+        },
+
+        // Real Haversine Road Distance Calculation
         get distanceKm() {
-            let pLen = (this.pickup || '').length;
-            let dLen = (this.destination || '').length;
-            return Math.max(4.5, Math.round((pLen + dLen) * 0.26 * 10) / 10);
+            let [lat1, lon1] = this.pickupCoords;
+            let [lat2, lon2] = this.destCoords;
+            
+            let R = 6371;
+            let dLat = (lat2 - lat1) * Math.PI / 180;
+            let dLon = (lon2 - lon1) * Math.PI / 180;
+            let a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+                    Math.sin(dLon/2) * Math.sin(dLon/2);
+            let c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+            let d = R * c;
+
+            return Math.max(3.2, Math.round(d * 1.35 * 10) / 10);
         },
 
         get durationMins() {
@@ -61,6 +105,65 @@ new #[Layout('layouts.guest')] class extends Component
 
         get etaMins() {
             return 8;
+        },
+
+        // Result Route Map Instance & Sync
+        resultMap: null,
+        pickupMarker: null,
+        destMarker: null,
+        routeLine: null,
+
+        initResultMap() {
+            setTimeout(() => {
+                let el = document.getElementById('leaflet-result-map');
+                if (!el || typeof L === 'undefined') return;
+
+                let p = this.pickupCoords;
+                let d = this.destCoords;
+
+                if (!this.resultMap) {
+                    this.resultMap = L.map(el, { zoomControl: false }).setView(p, 12);
+                    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                        maxZoom: 19,
+                        attribution: '© OpenStreetMap'
+                    }).addTo(this.resultMap);
+                }
+
+                if (this.pickupMarker) this.resultMap.removeLayer(this.pickupMarker);
+                if (this.destMarker) this.resultMap.removeLayer(this.destMarker);
+                if (this.routeLine) this.resultMap.removeLayer(this.routeLine);
+
+                // Pickup Marker (Green)
+                this.pickupMarker = L.circleMarker(p, {
+                    radius: 9,
+                    fillColor: '#10B981',
+                    color: '#FFFFFF',
+                    weight: 3,
+                    fillOpacity: 1
+                }).addTo(this.resultMap).bindPopup('<b>Jemput:</b> ' + this.pickup);
+
+                // Dest Marker (Red)
+                this.destMarker = L.circleMarker(d, {
+                    radius: 9,
+                    fillColor: '#EF4444',
+                    color: '#FFFFFF',
+                    weight: 3,
+                    fillOpacity: 1
+                }).addTo(this.resultMap).bindPopup('<b>Tujuan:</b> ' + this.destination);
+
+                // Connecting Route Line (Purple)
+                this.routeLine = L.polyline([p, d], {
+                    color: '#6B3F98',
+                    weight: 4,
+                    opacity: 0.85,
+                    dashArray: '8, 8'
+                }).addTo(this.resultMap);
+
+                // Auto Fit Bounds
+                let bounds = L.latLngBounds([p, d]);
+                this.resultMap.fitBounds(bounds, { padding: [35, 35] });
+                this.resultMap.invalidateSize();
+            }, 250);
         },
 
         get selectedType() {
@@ -108,6 +211,10 @@ new #[Layout('layouts.guest')] class extends Component
             return `https://wa.me/628123456789?text=${text}`;
         },
 
+        get gmapsExternalUrl() {
+            return `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(this.pickup)}&destination=${encodeURIComponent(this.destination)}`;
+        },
+
         showMapPicker: false,
         pickerTarget: 'pickup',
         pickerTitle: 'Pilih Titik di Peta',
@@ -122,42 +229,37 @@ new #[Layout('layouts.guest')] class extends Component
             this.pickerTitle = target === 'pickup' ? 'Pilih Titik Penjemputan di Peta' : 'Pilih Titik Tujuan di Peta';
             this.showMapPicker = true;
             
-            this.$nextTick(() => {
+            setTimeout(() => {
                 if (typeof L === 'undefined') return;
+                let container = document.getElementById('leaflet-picker-canvas');
+                if (!container) return;
                 
                 let initialLat = target === 'pickup' ? -6.8906 : -6.9315;
                 let initialLng = target === 'pickup' ? 107.6106 : 107.6590;
 
                 if (!this.mapInstance) {
-                    this.mapInstance = L.map('leaflet-picker-canvas').setView([initialLat, initialLng], 14);
+                    this.mapInstance = L.map(container, {
+                        zoomControl: true
+                    }).setView([initialLat, initialLng], 14);
+
                     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
                         maxZoom: 19,
                         attribution: '© OpenStreetMap'
                     }).addTo(this.mapInstance);
 
-                    this.markerInstance = L.marker([initialLat, initialLng], { draggable: true }).addTo(this.mapInstance);
-                    this.pickerLat = initialLat.toFixed(5);
-                    this.pickerLng = initialLng.toFixed(5);
-
-                    this.markerInstance.on('dragend', (e) => {
-                        let pos = e.target.getLatLng();
-                        this.pickerLat = pos.lat.toFixed(5);
-                        this.pickerLng = pos.lng.toFixed(5);
-                    });
-
-                    this.mapInstance.on('click', (e) => {
-                        this.markerInstance.setLatLng(e.latlng);
-                        this.pickerLat = e.latlng.lat.toFixed(5);
-                        this.pickerLng = e.latlng.lng.toFixed(5);
+                    this.mapInstance.on('move', () => {
+                        let center = this.mapInstance.getCenter();
+                        this.pickerLat = center.lat.toFixed(5);
+                        this.pickerLng = center.lng.toFixed(5);
                     });
                 } else {
                     this.mapInstance.setView([initialLat, initialLng], 14);
-                    this.markerInstance.setLatLng([initialLat, initialLng]);
-                    this.pickerLat = initialLat.toFixed(5);
-                    this.pickerLng = initialLng.toFixed(5);
-                    setTimeout(() => { this.mapInstance.invalidateSize(); }, 250);
                 }
-            });
+
+                this.pickerLat = initialLat.toFixed(5);
+                this.pickerLng = initialLng.toFixed(5);
+                this.mapInstance.invalidateSize();
+            }, 300);
         },
 
         confirmMapPicker() {
@@ -169,6 +271,27 @@ new #[Layout('layouts.guest')] class extends Component
             }
             this.showMapPicker = false;
         },
+
+        // Dynamic Nearby Locations & Hospitals Database
+        nearbyPickups: [
+            { label: '📍 Lokasi GPS Saya', isGps: true },
+            { label: '🏥 RSHS Bandung', value: 'RSUP Dr. Hasan Sadikin, Bandung' },
+            { label: '🏥 RS Dustira Cimahi', value: 'RS Dustira, Cimahi' },
+            { label: '🏛️ Gedung Sate', value: 'Gedung Sate, Bandung' },
+            { label: '🏙️ Bandung Kota', value: 'Alun-Alun Kota Bandung' },
+            { label: '✈️ Bandara Husein', value: 'Bandara Husein Sastranegara' },
+        ],
+
+        nearbyDestinations: [
+            { label: '🏥 RS Al Islam', value: 'RS Al Islam Bandung' },
+            { label: '🏥 RS Immanuel', value: 'RS Immanuel Bandung' },
+            { label: '🏥 RS Santosa Central', value: 'RS Santosa Central Bandung' },
+            { label: '🏥 RS Borromeus', value: 'RS Santo Borromeus Dago' },
+            { label: '🏥 RS Advent', value: 'RS Advent Cihampelas' },
+            { label: '🏥 RS Mayapada', value: 'RS Mayapada Buah Batu' },
+            { label: '🚄 Stasiun WHOOSH', value: 'Stasiun WHOOSH Tegalluar' },
+            { label: '🏙️ Luar Kota / Jakarta', value: 'Luar Kota (Jakarta / Jawa)' },
+        ],
 
         getGpsLocation() {
             if (!navigator.geolocation) {
@@ -182,6 +305,15 @@ new #[Layout('layouts.guest')] class extends Component
                     let lat = pos.coords.latitude.toFixed(5);
                     let lng = pos.coords.longitude.toFixed(5);
                     this.pickup = `Lokasi Presisi GPS (${lat}, ${lng})`;
+                    
+                    // Dynamically prepend nearby GPS hospital presets
+                    this.nearbyPickups = [
+                        { label: '📍 GPS Terdeteksi (' + lat + ', ' + lng + ')', isGps: true },
+                        { label: '🏥 RS Terdekat (Area GPS)', value: `RS Terdekat dari GPS (${lat}, ${lng})` },
+                        { label: '🏥 RSHS Bandung', value: 'RSUP Dr. Hasan Sadikin, Bandung' },
+                        { label: '🏥 RS Dustira Cimahi', value: 'RS Dustira, Cimahi' },
+                        { label: '🏛️ Gedung Sate', value: 'Gedung Sate, Bandung' },
+                    ];
                 },
                 (err) => {
                     this.isGpsLoading = false;
@@ -270,14 +402,16 @@ new #[Layout('layouts.guest')] class extends Component
                            class="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-3.5 py-2.5 text-[13px] text-slate-800 font-semibold outline-none focus:border-[#6B3F98] focus:bg-white focus:ring-2 focus:ring-[#6B3F98]/20 transition-all">
                     <svg class="w-4 h-4 text-emerald-600 absolute left-3 top-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
                 </div>
-                {{-- Quick Presets & GPS Auto Fetch --}}
+                {{-- Quick Presets & Dynamic Nearby Locations --}}
                 <div class="flex gap-1.5 mt-2 overflow-x-auto scrollbar-hide">
-                    <button type="button" @click="getGpsLocation()" class="text-[11px] font-bold px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition-colors whitespace-nowrap flex items-center gap-1">
-                        <svg x-show="!isGpsLoading" class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
-                        <span x-text="isGpsLoading ? 'Mengambil GPS...' : '📍 Gunakan Lokasi GPS Saya'"></span>
-                    </button>
-                    <button type="button" @click="pickup = 'RSUP Dr. Hasan Sadikin, Bandung'" class="text-[11px] font-medium px-2.5 py-1 rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors whitespace-nowrap">+ RSHS Bandung</button>
-                    <button type="button" @click="pickup = 'Kota Cimahi, Jawa Barat'" class="text-[11px] font-medium px-2.5 py-1 rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors whitespace-nowrap">+ Cimahi</button>
+                    <template x-for="item in nearbyPickups" :key="item.label">
+                        <button type="button"
+                                @click="item.isGps ? getGpsLocation() : pickup = item.value"
+                                class="text-[11px] font-semibold px-2.5 py-1 rounded-lg border whitespace-nowrap transition-all flex items-center gap-1 active:scale-95"
+                                :class="item.isGps ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100 shadow-2xs font-bold' : 'bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200'">
+                            <span x-text="item.label"></span>
+                        </button>
+                    </template>
                 </div>
             </div>
 
@@ -297,12 +431,15 @@ new #[Layout('layouts.guest')] class extends Component
                            class="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-3.5 py-2.5 text-[13px] text-slate-800 font-semibold outline-none focus:border-[#6B3F98] focus:bg-white focus:ring-2 focus:ring-[#6B3F98]/20 transition-all">
                     <svg class="w-4 h-4 text-red-500 absolute left-3 top-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 21v-4m0 0V5a2 2 0 012-2h6.5l1 1H21l-3 6 3 6h-8.5l-1-1H5a2 2 0 00-2 2zm9-13.5V9"/></svg>
                 </div>
-                {{-- Quick Presets --}}
+                {{-- Quick Presets & Nearby Hospitals --}}
                 <div class="flex gap-1.5 mt-2 overflow-x-auto scrollbar-hide">
-                    <button type="button" @click="destination = 'RS Al Islam Bandung'" class="text-[11px] font-medium px-2.5 py-1 rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors whitespace-nowrap">+ RS Al Islam</button>
-                    <button type="button" @click="destination = 'RS Immanuel Bandung'" class="text-[11px] font-medium px-2.5 py-1 rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors whitespace-nowrap">+ RS Immanuel</button>
-                    <button type="button" @click="destination = 'RS Santosa Bandung'" class="text-[11px] font-medium px-2.5 py-1 rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors whitespace-nowrap">+ RS Santosa</button>
-                    <button type="button" @click="destination = 'Jakarta / Luar Kota'" class="text-[11px] font-medium px-2.5 py-1 rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors whitespace-nowrap">+ Luar Kota</button>
+                    <template x-for="item in nearbyDestinations" :key="item.label">
+                        <button type="button"
+                                @click="destination = item.value"
+                                class="text-[11px] font-semibold px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700 border border-slate-200 hover:bg-slate-200 whitespace-nowrap transition-all flex items-center gap-1 active:scale-95">
+                            <span x-text="item.label"></span>
+                        </button>
+                    </template>
                 </div>
             </div>
         </div>
@@ -476,20 +613,21 @@ new #[Layout('layouts.guest')] class extends Component
                 </span>
             </div>
 
-            {{-- Google Maps Embed Frame --}}
-            <div class="relative bg-slate-100 border-b border-slate-100 overflow-hidden" style="height:200px">
-                <iframe
-                    width="100%"
-                    height="100%"
-                    style="border:0; filter: contrast(1.05);"
-                    loading="lazy"
-                    allowfullscreen
-                    referrerpolicy="no-referrer-when-downgrade"
-                    :src="'https://maps.google.com/maps?q=' + encodeURIComponent(pickup) + '+to+' + encodeURIComponent(destination) + '&t=&z=13&ie=UTF8&iwloc=&output=embed'">
-                </iframe>
+            {{-- Interactive Leaflet Result Route Map Container --}}
+            <div class="relative bg-slate-100 border-b border-slate-100 overflow-hidden" style="height:230px">
+                <div id="leaflet-result-map" class="w-full h-full z-10"></div>
+
+                {{-- Direct Google Maps Link Button --}}
+                <div class="absolute top-2.5 right-2.5 z-30">
+                    <a :href="gmapsExternalUrl" target="_blank"
+                       class="inline-flex items-center gap-1.5 bg-white/95 backdrop-blur-md text-slate-800 text-[11px] font-bold px-2.5 py-1.5 rounded-lg border border-slate-200 shadow-md hover:bg-slate-50 transition-colors">
+                        <svg class="w-3.5 h-3.5 text-blue-600" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>
+                        Buka Google Maps App
+                    </a>
+                </div>
 
                 {{-- Map Float Overlay --}}
-                <div class="absolute bottom-2 left-2 right-2 bg-white/95 backdrop-blur-md p-2.5 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
+                <div class="absolute bottom-2 left-2 right-2 bg-white/95 backdrop-blur-md p-2.5 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between z-30">
                     <div class="flex items-center gap-3">
                         <div>
                             <p class="text-[9.5px] font-bold text-slate-400 uppercase leading-none">Est. Jarak</p>
@@ -608,11 +746,22 @@ new #[Layout('layouts.guest')] class extends Component
                 </button>
             </div>
 
-            {{-- Map Canvas --}}
-            <div class="relative w-full bg-slate-200" style="height:320px">
-                <div id="leaflet-picker-canvas" class="w-full h-full"></div>
-                <div class="absolute top-2 left-2 right-2 bg-white/95 backdrop-blur-sm p-2 rounded-xl border border-slate-200 text-center shadow-xs z-40 pointer-events-none">
-                    <p class="text-[11px] font-bold text-slate-700">📍 Klik peta atau geser pin penanda untuk menentukan lokasi presisi</p>
+            {{-- Map Canvas with Center Pin Overlay --}}
+            <div class="relative w-full bg-slate-200 overflow-hidden" style="height:350px">
+                <div id="leaflet-picker-canvas" class="w-full h-full z-10"></div>
+                
+                {{-- Fixed Center Pin Marker --}}
+                <div class="absolute inset-0 flex items-center justify-center pointer-events-none z-30">
+                    <div class="flex flex-col items-center -mt-8">
+                        <div class="w-10 h-10 rounded-full bg-[#6B3F98] text-white flex items-center justify-center shadow-xl ring-4 ring-white animate-bounce-short">
+                            <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                        </div>
+                        <div class="w-2.5 h-2.5 bg-slate-900 rounded-full opacity-60 blur-2xs mt-0.5"></div>
+                    </div>
+                </div>
+
+                <div class="absolute top-2.5 left-2.5 right-2.5 bg-white/95 backdrop-blur-md p-2 rounded-xl border border-slate-200 text-center shadow-sm z-30 pointer-events-none">
+                    <p class="text-[11.5px] font-bold text-slate-800">📍 Geser peta untuk menempatkan pin di lokasi presisi</p>
                 </div>
             </div>
 
